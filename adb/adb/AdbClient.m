@@ -27,8 +27,8 @@ extern int do_sync_push(const char *lpath, const char *rpath, int verifyApk);
 @property(strong) dispatch_queue_t queue;
 
 -(void) read:(int)fd toResponse:(ResponseBlock)block;
--(void) send_shell_command:(NSString *) cmd toResponse:(ResponseBlock)block;
--(void) pm_command:(NSString *)cmd toResponse:(ResponseBlock)block;
+-(void) shell:(NSString *) cmd toResponse:(ResponseBlock)block;
+-(void) pm:(NSString *)cmd toResponse:(ResponseBlock)block;
 @end
 
 
@@ -198,7 +198,7 @@ extern int do_sync_push(const char *lpath, const char *rpath, int verifyApk);
                 block(FALSE, [NSString stringWithCString:adb_error() encoding:NSUTF8StringEncoding]);
         }
  
-        [self send_shell_command:[NSString stringWithFormat:@"rm %s", apk_dest] toResponse:nil];
+        [self shell:[NSString stringWithFormat:@"rm %s", apk_dest] toResponse:nil];
         
     });
 }
@@ -207,7 +207,7 @@ extern int do_sync_push(const char *lpath, const char *rpath, int verifyApk);
 -(void) uninstallApk:(NSString *)packageName didResponse:(ResponseBlock)block
 {
     dispatch_async(_queue, ^{
-        [self pm_command:[NSString stringWithFormat:@"uninstall %@", packageName] toResponse:block];
+        [self pm:[NSString stringWithFormat:@"uninstall %@", packageName] toResponse:block];
     });
 }
 
@@ -217,21 +217,21 @@ extern int do_sync_push(const char *lpath, const char *rpath, int verifyApk);
     dispatch_async(_queue, ^{
         
         if ([cmd length] != 0)
-            [self send_shell_command:cmd toResponse:block];
+            [self shell:cmd toResponse:block];
         else if (block)
             block(FALSE, @"must have command");
     });
 }
 
 
--(void) pm_command:(NSString *)cmd toResponse:(ResponseBlock)block
+-(void) pm:(NSString *)cmd toResponse:(ResponseBlock)block
 {
     NSString *tmp = [NSString stringWithFormat:@"pm %@", cmd];
-    [self send_shell_command:tmp toResponse:block];
+    [self shell:tmp toResponse:block];
 }
 
 
--(void) send_shell_command:(NSString *)cmd toResponse:(ResponseBlock)block
+-(void) shell:(NSString *)cmd toResponse:(ResponseBlock)block
 {
     
     int fd = adb_connect([NSString stringWithFormat:@"shell:%@", cmd].UTF8String);
