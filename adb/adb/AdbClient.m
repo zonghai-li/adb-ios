@@ -168,7 +168,7 @@ extern int do_sync_push(const char *lpath, const char *rpath, int verifyApk);
             char buf[BUF_SIZE];
             int len;
             
-            while(fd >= 0) {
+            while(1) {
                 
                 len = adb_read(fd, buf, BUF_SIZE);
                 if(len == 0) {
@@ -254,14 +254,14 @@ extern int do_sync_push(const char *lpath, const char *rpath, int verifyApk);
     char buf[BUF_SIZE];
     int len;
     
-    while(fd >= 0) {
-
+    while(fd >= 0)
+    {
         len = adb_read(fd, buf, BUF_SIZE);
-        if(len == 0) {
+        if(len == 0)
             break;
-        }
-        
-        if(len < 0) {
+     
+        if(len < 0)
+        {
             if(errno == EINTR) continue;
             break;
         }
