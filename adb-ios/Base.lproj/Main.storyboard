@@ -57,7 +57,7 @@
                                     <action selector="disconnect:" destination="BYZ-38-t0r" eventType="touchUpInside" id="Y2n-pI-yUk"/>
                                 </connections>
                             </button>
-                            <textView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" fixedFrame="YES" textAlignment="natural" translatesAutoresizingMaskIntoConstraints="NO" id="w6w-xR-7hO">
+                            <textView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" fixedFrame="YES" editable="NO" textAlignment="natural" selectable="NO" translatesAutoresizingMaskIntoConstraints="NO" id="w6w-xR-7hO">
                                 <rect key="frame" x="0.0" y="351" width="320" height="249"/>
                                 <animations/>
                                 <fontDescription key="fontDescription" type="system" pointSize="14"/>

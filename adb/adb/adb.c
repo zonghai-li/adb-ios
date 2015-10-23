@@ -557,7 +557,7 @@ void handle_packet(apacket *p, atransport *t)
 
         if (HOST || !auth_enabled) {
             handle_online(t);
-        if(!HOST) send_connect(t);
+            if(!HOST) send_connect(t);
         } else {
             send_auth_request(t);
         }
