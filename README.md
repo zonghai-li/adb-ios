@@ -1,12 +1,14 @@
 # adb-ios
-Android ADB on iOS
+Android ADB on iOS. It works as the ADB host role on iOS through which one can **connect** to android devices.
+
+NOTE that this is **not** the ADB **daemon** program that is running inside the android device. 
 
 # Porting Details
-- ADB host (client + server architecture) on the iOS host side. The ADB server uses port 5037 as would normally do.
+- ADB host (client + server architecture) on the iOS host side. The server uses the default port 5037.
 
 - No USB supported
 
-- ADB client exposes some essential methods for caller codes to integrate ADB functionalities.
+- The client part exposes a few essential methods for iOS applications to integrate ADB functionalities.
 
 - Application should include private/public key files in the application bundle (.ipa). The location and file name must be as this: 
  - [app-bundle-path]/android/adbkey 
