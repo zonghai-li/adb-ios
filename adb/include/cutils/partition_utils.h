@@ -22,18 +22,6 @@ __BEGIN_DECLS
 int partition_wiped(char *source);
 void erase_footer(const char *dev_path, long long size);
 
-#ifdef MTK_EMMC_SUPPORT
-    #define PHONE_ENCRYPTED (0x4321)
-    #define PHONE_UNCRYPTED (0x0)
-    #define PHONE_ENCRYPT_OFFSET (2048)
-    struct phone_encrypt_state {
-        int state;
-    };
-
-    int misc_set_phone_encrypt_state(const struct phone_encrypt_state *in);
-    int misc_get_phone_encrypt_state(struct phone_encrypt_state *in);
-#endif
-
 __END_DECLS
 
 #endif /* __CUTILS_PARTITION_WIPED_H__ */

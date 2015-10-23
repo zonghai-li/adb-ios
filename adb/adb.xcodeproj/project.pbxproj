@@ -19,7 +19,6 @@
 		7C75D3471BBD7F3E001167B1 /* sockets.c in Sources */ = {isa = PBXBuildFile; fileRef = 7C75D3371BBD7F3E001167B1 /* sockets.c */; settings = {ASSET_TAGS = (); }; };
 		7C75D3481BBD7F3E001167B1 /* transport_local.c in Sources */ = {isa = PBXBuildFile; fileRef = 7C75D3391BBD7F3E001167B1 /* transport_local.c */; settings = {ASSET_TAGS = (); }; };
 		7C75D3491BBD7F3E001167B1 /* transport.c in Sources */ = {isa = PBXBuildFile; fileRef = 7C75D33A1BBD7F3E001167B1 /* transport.c */; settings = {ASSET_TAGS = (); }; };
-		7C75D34A1BBD7F3E001167B1 /* utils.c in Sources */ = {isa = PBXBuildFile; fileRef = 7C75D33C1BBD7F3E001167B1 /* utils.c */; settings = {ASSET_TAGS = (); }; };
 		7C75D3501BBD7FF5001167B1 /* centraldir.c in Sources */ = {isa = PBXBuildFile; fileRef = 7C75D34D1BBD7FF5001167B1 /* centraldir.c */; settings = {ASSET_TAGS = (); }; };
 		7C75D3511BBD7FF5001167B1 /* zipfile.c in Sources */ = {isa = PBXBuildFile; fileRef = 7C75D34F1BBD7FF5001167B1 /* zipfile.c */; settings = {ASSET_TAGS = (); }; };
 		7C75D3581BBD8010001167B1 /* socket_inaddr_any_server.c in Sources */ = {isa = PBXBuildFile; fileRef = 7C75D3521BBD8010001167B1 /* socket_inaddr_any_server.c */; settings = {ASSET_TAGS = (); }; };
@@ -28,6 +27,9 @@
 		7C75D35B1BBD8010001167B1 /* socket_loopback_client.c in Sources */ = {isa = PBXBuildFile; fileRef = 7C75D3551BBD8010001167B1 /* socket_loopback_client.c */; settings = {ASSET_TAGS = (); }; };
 		7C75D35C1BBD8010001167B1 /* socket_loopback_server.c in Sources */ = {isa = PBXBuildFile; fileRef = 7C75D3561BBD8010001167B1 /* socket_loopback_server.c */; settings = {ASSET_TAGS = (); }; };
 		7C75D35D1BBD8010001167B1 /* socket_network_client.c in Sources */ = {isa = PBXBuildFile; fileRef = 7C75D3571BBD8010001167B1 /* socket_network_client.c */; settings = {ASSET_TAGS = (); }; };
+		7C8788641BDA6484000858D6 /* adb_auth_host.c in Sources */ = {isa = PBXBuildFile; fileRef = 7C8788621BDA6484000858D6 /* adb_auth_host.c */; settings = {ASSET_TAGS = (); }; };
+		7C8788671BDA6F8B000858D6 /* load_file.c in Sources */ = {isa = PBXBuildFile; fileRef = 7C8788661BDA6F8B000858D6 /* load_file.c */; settings = {ASSET_TAGS = (); }; };
+		7C87886C1BDA7CA3000858D6 /* libcrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 7C87886A1BDA7CA3000858D6 /* libcrypto.a */; settings = {ASSET_TAGS = (); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -64,8 +66,6 @@
 		7C75D3391BBD7F3E001167B1 /* transport_local.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = transport_local.c; sourceTree = "<group>"; };
 		7C75D33A1BBD7F3E001167B1 /* transport.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = transport.c; sourceTree = "<group>"; };
 		7C75D33B1BBD7F3E001167B1 /* transport.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = transport.h; sourceTree = "<group>"; };
-		7C75D33C1BBD7F3E001167B1 /* utils.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = utils.c; sourceTree = "<group>"; };
-		7C75D33D1BBD7F3E001167B1 /* utils.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = utils.h; sourceTree = "<group>"; };
 		7C75D34D1BBD7FF5001167B1 /* centraldir.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = centraldir.c; path = libzipfile/centraldir.c; sourceTree = "<group>"; };
 		7C75D34E1BBD7FF5001167B1 /* private.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = private.h; path = libzipfile/private.h; sourceTree = "<group>"; };
 		7C75D34F1BBD7FF5001167B1 /* zipfile.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = zipfile.c; path = libzipfile/zipfile.c; sourceTree = "<group>"; };
@@ -75,6 +75,11 @@
 		7C75D3551BBD8010001167B1 /* socket_loopback_client.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = socket_loopback_client.c; path = libcutils/socket_loopback_client.c; sourceTree = "<group>"; };
 		7C75D3561BBD8010001167B1 /* socket_loopback_server.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = socket_loopback_server.c; path = libcutils/socket_loopback_server.c; sourceTree = "<group>"; };
 		7C75D3571BBD8010001167B1 /* socket_network_client.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = socket_network_client.c; path = libcutils/socket_network_client.c; sourceTree = "<group>"; };
+		7C8788621BDA6484000858D6 /* adb_auth_host.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = adb_auth_host.c; sourceTree = "<group>"; };
+		7C8788651BDA6866000858D6 /* adb_auth.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = adb_auth.h; sourceTree = "<group>"; };
+		7C8788661BDA6F8B000858D6 /* load_file.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = load_file.c; path = libcutils/load_file.c; sourceTree = "<group>"; };
+		7C87886A1BDA7CA3000858D6 /* libcrypto.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libcrypto.a; sourceTree = "<group>"; };
+		7C87886E1BDA82AA000858D6 /* adb_trace.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = adb_trace.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -82,6 +87,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7C87886C1BDA7CA3000858D6 /* libcrypto.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -91,6 +97,7 @@
 		7C75D3131BBD7D43001167B1 = {
 			isa = PBXGroup;
 			children = (
+				7C87886A1BDA7CA3000858D6 /* libcrypto.a */,
 				7C75D34C1BBD7FE2001167B1 /* libzipfile */,
 				7C75D34B1BBD7FDA001167B1 /* libcutils */,
 				7C75D31E1BBD7D43001167B1 /* adb */,
@@ -109,6 +116,9 @@
 		7C75D31E1BBD7D43001167B1 /* adb */ = {
 			isa = PBXGroup;
 			children = (
+				7C87886E1BDA82AA000858D6 /* adb_trace.h */,
+				7C8788651BDA6866000858D6 /* adb_auth.h */,
+				7C8788621BDA6484000858D6 /* adb_auth_host.c */,
 				7C75D3281BBD7F3E001167B1 /* adb_client.c */,
 				7C75D3291BBD7F3E001167B1 /* adb_client.h */,
 				7C75D32A1BBD7F3E001167B1 /* adb.c */,
@@ -129,8 +139,6 @@
 				7C75D3391BBD7F3E001167B1 /* transport_local.c */,
 				7C75D33A1BBD7F3E001167B1 /* transport.c */,
 				7C75D33B1BBD7F3E001167B1 /* transport.h */,
-				7C75D33C1BBD7F3E001167B1 /* utils.c */,
-				7C75D33D1BBD7F3E001167B1 /* utils.h */,
 			);
 			path = adb;
 			sourceTree = "<group>";
@@ -138,6 +146,7 @@
 		7C75D34B1BBD7FDA001167B1 /* libcutils */ = {
 			isa = PBXGroup;
 			children = (
+				7C8788661BDA6F8B000858D6 /* load_file.c */,
 				7C75D3521BBD8010001167B1 /* socket_inaddr_any_server.c */,
 				7C75D3531BBD8010001167B1 /* socket_local_client.c */,
 				7C75D3541BBD8010001167B1 /* socket_local_server.c */,
@@ -221,13 +230,14 @@
 				7C75D3581BBD8010001167B1 /* socket_inaddr_any_server.c in Sources */,
 				7C75D3451BBD7F3E001167B1 /* file_sync_service.c in Sources */,
 				7C75D3501BBD7FF5001167B1 /* centraldir.c in Sources */,
+				7C8788671BDA6F8B000858D6 /* load_file.c in Sources */,
 				7C75D3431BBD7F3E001167B1 /* fdevent.c in Sources */,
 				7C75D35A1BBD8010001167B1 /* socket_local_server.c in Sources */,
+				7C8788641BDA6484000858D6 /* adb_auth_host.c in Sources */,
 				7C75D3471BBD7F3E001167B1 /* sockets.c in Sources */,
 				7C75D3461BBD7F3E001167B1 /* services.c in Sources */,
 				7C75D3511BBD7FF5001167B1 /* zipfile.c in Sources */,
 				7C75D3401BBD7F3E001167B1 /* AdbClient.m in Sources */,
-				7C75D34A1BBD7F3E001167B1 /* utils.c in Sources */,
 				7C75D3411BBD7F3E001167B1 /* commandline.c in Sources */,
 				7C75D35B1BBD8010001167B1 /* socket_loopback_client.c in Sources */,
 				7C75D3441BBD7F3E001167B1 /* file_sync_client.c in Sources */,
@@ -327,6 +337,14 @@
 		7C75D3261BBD7D43001167B1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
 				OTHER_LDFLAGS = "-ObjC";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -336,6 +354,14 @@
 		7C75D3271BBD7D43001167B1 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
 				OTHER_LDFLAGS = "-ObjC";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;

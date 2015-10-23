@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 The Android Open Source Project
+ * Copyright (C) 2011-2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,10 +25,11 @@
 #include <string.h>
 
 #include <cutils/hashmap.h>
-#include <cutils/log.h>
 #include <cutils/memory.h>
-
 #include <cutils/str_parms.h>
+#include <log/log.h>
+
+#define UNUSED __attribute__((unused))
 
 struct str_parms {
     Hashmap *map;
@@ -70,19 +71,57 @@ err:
     return NULL;
 }
 
+struct remove_ctxt {
+    struct str_parms *str_parms;
+    const char *key;
+};
+
 static bool remove_pair(void *key, void *value, void *context)
 {
-    struct str_parms *str_parms = context;
+    struct remove_ctxt *ctxt = context;
+    bool should_continue;
 
-    hashmapRemove(str_parms->map, key);
+    /*
+     * - if key is not supplied, then we are removing all entries,
+     *   so remove key and continue (i.e. return true)
+     * - if key is supplied and matches, then remove it and don't
+     *   continue (return false). Otherwise, return true and keep searching
+     *   for key.
+     *
+     */
+    if (!ctxt->key) {
+        should_continue = true;
+        goto do_remove;
+    } else if (!strcmp(ctxt->key, key)) {
+        should_continue = false;
+        goto do_remove;
+    }
+
+    return true;
+
+do_remove:
+    hashmapRemove(ctxt->str_parms->map, key);
     free(key);
     free(value);
-    return true;
+    return should_continue;
+}
+
+void str_parms_del(struct str_parms *str_parms, const char *key)
+{
+    struct remove_ctxt ctxt = {
+        .str_parms = str_parms,
+        .key = key,
+    };
+    hashmapForEach(str_parms->map, remove_pair, &ctxt);
 }
 
 void str_parms_destroy(struct str_parms *str_parms)
 {
-    hashmapForEach(str_parms->map, remove_pair, str_parms);
+    struct remove_ctxt ctxt = {
+        .str_parms = str_parms,
+    };
+
+    hashmapForEach(str_parms->map, remove_pair, &ctxt);
     hashmapFree(str_parms->map);
     free(str_parms);
 }
@@ -103,7 +142,7 @@ struct str_parms *str_parms_create_str(const char *_string)
     if (!str)
         goto err_strdup;
 
-    LOGV("%s: source string == '%s'\n", __func__, _string);
+    ALOGV("%s: source string == '%s'\n", __func__, _string);
 
     kvpair = strtok_r(str, ";", &tmpstr);
     while (kvpair && *kvpair) {
@@ -128,8 +167,10 @@ struct str_parms *str_parms_create_str(const char *_string)
 
         /* if we replaced a value, free it */
         old_val = hashmapPut(str_parms->map, key, value);
-        if (old_val)
+        if (old_val) {
             free(old_val);
+            free(key);
+        }
 
         items++;
 next_pair:
@@ -137,7 +178,7 @@ next_pair:
     }
 
     if (!items)
-        LOGV("%s: no items found in string\n", __func__);
+        ALOGV("%s: no items found in string\n", __func__);
 
     free(str);
 
@@ -149,27 +190,49 @@ err_create_str_parms:
     return NULL;
 }
 
-void str_parms_del(struct str_parms *str_parms, const char *key)
-{
-    hashmapRemove(str_parms->map, (void *)key);
-}
-
 int str_parms_add_str(struct str_parms *str_parms, const char *key,
                       const char *value)
 {
-    void *old_val;
-    char *tmp;
+    void *tmp_key = NULL;
+    void *tmp_val = NULL;
+    void *old_val = NULL;
 
-    tmp = strdup(value);
-    old_val = hashmapPut(str_parms->map, (void *)key, tmp);
+    // strdup and hashmapPut both set errno on failure.
+    // Set errno to 0 so we can recognize whether anything went wrong.
+    int saved_errno = errno;
+    errno = 0;
 
-    if (old_val) {
-        free(old_val);
-    } else if (errno == ENOMEM) {
-        free(tmp);
-        return -ENOMEM;
+    tmp_key = strdup(key);
+    if (tmp_key == NULL) {
+        goto clean_up;
     }
-    return 0;
+
+    tmp_val = strdup(value);
+    if (tmp_val == NULL) {
+        goto clean_up;
+    }
+
+    old_val = hashmapPut(str_parms->map, tmp_key, tmp_val);
+    if (old_val == NULL) {
+        // Did hashmapPut fail?
+        if (errno == ENOMEM) {
+            goto clean_up;
+        }
+        // For new keys, hashmap takes ownership of tmp_key and tmp_val.
+        tmp_key = tmp_val = NULL;
+    } else {
+        // For existing keys, hashmap takes ownership of tmp_val.
+        // (It also gives up ownership of old_val.)
+        tmp_val = NULL;
+    }
+
+clean_up:
+    free(tmp_key);
+    free(tmp_val);
+    free(old_val);
+    int result = -errno;
+    errno = saved_errno;
+    return result;
 }
 
 int str_parms_add_int(struct str_parms *str_parms, const char *key, int value)
@@ -197,6 +260,10 @@ int str_parms_add_float(struct str_parms *str_parms, const char *key,
 
     ret = str_parms_add_str(str_parms, key, val_str);
     return ret;
+}
+
+int str_parms_has_key(struct str_parms *str_parms, const char *key) {
+    return hashmapGet(str_parms->map, (void *)key) != NULL;
 }
 
 int str_parms_get_str(struct str_parms *str_parms, const char *key, char *val,
@@ -239,10 +306,11 @@ int str_parms_get_float(struct str_parms *str_parms, const char *key,
         return -ENOENT;
 
     out = strtof(value, &end);
-    if (*value != '\0' && *end == '\0')
-        return 0;
+    if (*value == '\0' || *end != '\0')
+        return -EINVAL;
 
-    return -EINVAL;
+    *val = out;
+    return 0;
 }
 
 static bool combine_strings(void *key, void *value, void *context)
@@ -279,9 +347,9 @@ char *str_parms_to_str(struct str_parms *str_parms)
     return str;
 }
 
-static bool dump_entry(void *key, void *value, void *context)
+static bool dump_entry(void *key, void *value, void *context UNUSED)
 {
-    LOGI("key: '%s' value: '%s'\n", (char *)key, (char *)value);
+    ALOGI("key: '%s' value: '%s'\n", (char *)key, (char *)value);
     return true;
 }
 
@@ -295,20 +363,20 @@ static void test_str_parms_str(const char *str)
 {
     struct str_parms *str_parms;
     char *out_str;
-    int ret;
 
     str_parms = str_parms_create_str(str);
+    str_parms_add_str(str_parms, "dude", "woah");
+    str_parms_add_str(str_parms, "dude", "woah");
+    str_parms_del(str_parms, "dude");
     str_parms_dump(str_parms);
     out_str = str_parms_to_str(str_parms);
     str_parms_destroy(str_parms);
-    LOGI("%s: '%s' stringified is '%s'", __func__, str, out_str);
+    ALOGI("%s: '%s' stringified is '%s'", __func__, str, out_str);
     free(out_str);
 }
 
 int main(void)
 {
-    struct str_parms *str_parms;
-
     test_str_parms_str("");
     test_str_parms_str(";");
     test_str_parms_str("=");
@@ -323,6 +391,16 @@ int main(void)
     test_str_parms_str("foo=bar;baz=");
     test_str_parms_str("foo=bar;baz=bat");
     test_str_parms_str("foo=bar;baz=bat;");
+    test_str_parms_str("foo=bar;baz=bat;foo=bar");
+
+    // hashmapPut reports errors by setting errno to ENOMEM.
+    // Test that we're not confused by running in an environment where this is already true.
+    errno = ENOMEM;
+    test_str_parms_str("foo=bar;baz=");
+    if (errno != ENOMEM) {
+        abort();
+    }
+    test_str_parms_str("foo=bar;baz=");
 
     return 0;
 }

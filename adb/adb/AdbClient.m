@@ -18,7 +18,6 @@
 
 
 extern const char* get_basename(const char* filename);
-extern int check_file(const char* filename);
 extern int do_sync_push(const char *lpath, const char *rpath, int verifyApk);
 
 
@@ -38,16 +37,57 @@ extern int do_sync_push(const char *lpath, const char *rpath, int verifyApk);
 
 -(id) init
 {
-    if (self = [super init])
+    if ((self = [super init]))
     {
         adb_sysdeps_init();
-        adb_trace_init();
-        
         _queue = dispatch_queue_create("adb-queue", DISPATCH_QUEUE_SERIAL);
+        
+        NSString *path = [[NSBundle mainBundle] bundlePath];
+        if (setenv("HOME", path.UTF8String, YES) != 0)
+        {
+            NSLog(@"WARN! can't set HOME directory. adb may not find adbkey files");
+        }
         
     }
     
     return self;
+}
+
+
+-(id)initWithVerbose:(BOOL)flg
+{
+    if ((self = [self init]))
+    {
+        if (flg) adb_trace_init("all");
+    }
+    return self;
+}
+
+
+-(void) devices:(ResponseBlock)block
+{
+    dispatch_async(_queue, ^{
+        
+        char *buf = "host:devices-l" ;
+        char *tmp;
+        
+        tmp = adb_query(buf);
+        if (tmp)
+        {
+            if (block)
+            {
+                NSString *result = [NSString stringWithFormat:@"List of devices attached\n%s", tmp];
+                block(YES, result);
+            }
+            free(tmp);
+        }
+        else
+        {
+            if(block)
+                block(NO, [NSString stringWithUTF8String:adb_error()]);
+        }
+        
+    });
 }
 
 
@@ -67,16 +107,16 @@ extern int do_sync_push(const char *lpath, const char *rpath, int verifyApk);
             {
                 NSString *result = [NSString stringWithUTF8String:tmp];
                 if ([result rangeOfString:@"connected"].location != NSNotFound)
-                    block(TRUE, result);
+                    block(YES, result);
                 else
-                    block(FALSE, result);
+                    block(NO, result);
             }
             free(tmp);
         }
         else
         {
             if(block)
-                block(FALSE, [NSString stringWithUTF8String:adb_error()]);
+                block(NO, [NSString stringWithUTF8String:adb_error()]);
         }
        
     });
@@ -101,12 +141,12 @@ extern int do_sync_push(const char *lpath, const char *rpath, int verifyApk);
         if (tmp)
         {
             if (block)
-                block(TRUE, [NSString stringWithUTF8String:tmp]);
+                block(YES, [NSString stringWithUTF8String:tmp]);
             free(tmp);
         }
         else
         {
-            if(block) block(FALSE, [NSString stringWithUTF8String:adb_error()]);
+            if(block) block(NO, [NSString stringWithUTF8String:adb_error()]);
         }
         
 
@@ -132,21 +172,15 @@ extern int do_sync_push(const char *lpath, const char *rpath, int verifyApk);
         
         if ([apkPath length] == 0)
         {
-            if (block) block(FALSE, @"can't find filename in arguments");
+            if (block) block(NO, @"can't find filename in arguments");
             return;
         }
         
         apk_file = apkPath.UTF8String;
-        
-        if (check_file(apk_file)) {
-           if (block) block(FALSE, @"apk file not exists");
-            return;
-        }
-        
         snprintf(apk_dest, sizeof apk_dest, where, get_basename(apk_file));
         err = do_sync_push(apk_file, apk_dest, 1 /* verify APK */);
         if (err) {
-           if(block) block(FALSE, nil);
+           if(block) block(NO, nil);
             return;
         }
         
@@ -184,9 +218,9 @@ extern int do_sync_push(const char *lpath, const char *rpath, int verifyApk);
                 {
                     *(buf + len) = '\0';
                     if (*buf == 'S')
-                        block(TRUE, [NSString stringWithUTF8String:buf]);
+                        block(YES, [NSString stringWithUTF8String:buf]);
                     else if (*buf == 'F')
-                        block(FALSE, [NSString stringWithUTF8String:buf]);
+                        block(NO, [NSString stringWithUTF8String:buf]);
                 }
             }
 
@@ -195,7 +229,7 @@ extern int do_sync_push(const char *lpath, const char *rpath, int verifyApk);
         else
         {
             if(block)
-                block(FALSE, [NSString stringWithCString:adb_error() encoding:NSUTF8StringEncoding]);
+                block(NO, [NSString stringWithCString:adb_error() encoding:NSUTF8StringEncoding]);
         }
  
         [self shell:[NSString stringWithFormat:@"rm %s", apk_dest] toResponse:nil];
@@ -219,7 +253,7 @@ extern int do_sync_push(const char *lpath, const char *rpath, int verifyApk);
         if ([cmd length] != 0)
             [self shell:cmd toResponse:block];
         else if (block)
-            block(FALSE, @"must have command");
+            block(NO, @"must have command");
     });
 }
 
@@ -243,7 +277,7 @@ extern int do_sync_push(const char *lpath, const char *rpath, int verifyApk);
     else
         
     {
-        if(block) block(FALSE, [NSString stringWithUTF8String:adb_error()]);
+        if(block) block(NO, [NSString stringWithUTF8String:adb_error()]);
     }
 
 }
@@ -269,7 +303,7 @@ extern int do_sync_push(const char *lpath, const char *rpath, int verifyApk);
         if (block)
         {
             *(buf + len) = '\0';
-            block(TRUE, [NSString stringWithUTF8String:buf]);
+            block(YES, [NSString stringWithUTF8String:buf]);
         }
     }
 

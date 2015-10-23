@@ -25,6 +25,7 @@
 #include <limits.h>
 #include <sys/types.h>
 #include <zipfile/zipfile.h>
+#include <utime.h>
 
 #include "sysdeps.h"
 #include "adb.h"
@@ -32,7 +33,7 @@
 #include "file_sync_service.h"
 
 
-static unsigned total_bytes;
+static unsigned long long total_bytes;
 static long long start_time;
 
 static long long NOW()
@@ -58,8 +59,24 @@ static void END()
         t = 1000000;
 
     fprintf(stderr,"%lld KB/s (%lld bytes in %lld.%03llds)\n",
-            ((((long long) total_bytes) * 1000000LL) / t) / 1024LL,
-            (long long) total_bytes, (t / 1000000LL), (t % 1000000LL) / 1000LL);
+            ((total_bytes * 1000000LL) / t) / 1024LL,
+            total_bytes, (t / 1000000LL), (t % 1000000LL) / 1000LL);
+}
+
+static const char* transfer_progress_format = "\rTransferring: %llu/%llu (%d%%)";
+
+static void print_transfer_progress(unsigned long long bytes_current,
+                                    unsigned long long bytes_total) {
+    if (bytes_total == 0) return;
+
+    fprintf(stderr, transfer_progress_format, bytes_current, bytes_total,
+            (int) (bytes_current * 100 / bytes_total));
+
+    if (bytes_current == bytes_total) {
+        fputc('\n', stderr);
+    }
+
+    fflush(stderr);
 }
 
 void sync_quit(int fd)
@@ -123,7 +140,8 @@ struct syncsendbuf {
 
 static syncsendbuf send_buffer;
 
-int sync_readtime(int fd, const char *path, unsigned *timestamp)
+int sync_readtime(int fd, const char *path, unsigned int *timestamp,
+                  unsigned int *mode)
 {
     syncmsg msg;
     int len = strlen(path);
@@ -145,6 +163,7 @@ int sync_readtime(int fd, const char *path, unsigned *timestamp)
     }
 
     *timestamp = ltohl(msg.stat.time);
+    *mode = ltohl(msg.stat.mode);
     return 0;
 }
 
@@ -207,14 +226,26 @@ int sync_readmode(int fd, const char *path, unsigned *mode)
     return 0;
 }
 
-static int write_data_file(int fd, const char *path, syncsendbuf *sbuf)
+static int write_data_file(int fd, const char *path, syncsendbuf *sbuf, int show_progress)
 {
     int lfd, err = 0;
+    unsigned long long size = 0;
 
     lfd = adb_open(path, O_RDONLY);
     if(lfd < 0) {
         fprintf(stderr,"cannot open '%s': %s\n", path, strerror(errno));
         return -1;
+    }
+
+    if (show_progress) {
+        // Determine local file size.
+        struct stat st;
+        if (fstat(lfd, &st)) {
+            fprintf(stderr,"cannot stat '%s': %s\n", path, strerror(errno));
+            return -1;
+        }
+
+        size = st.st_size;
     }
 
     sbuf->id = ID_DATA;
@@ -238,13 +269,18 @@ static int write_data_file(int fd, const char *path, syncsendbuf *sbuf)
             break;
         }
         total_bytes += ret;
+
+        if (show_progress) {
+            print_transfer_progress(total_bytes, size);
+        }
     }
 
     adb_close(lfd);
     return err;
 }
 
-static int write_data_buffer(int fd, char* file_buffer, int size, syncsendbuf *sbuf)
+static int write_data_buffer(int fd, char* file_buffer, int size, syncsendbuf *sbuf,
+                             int show_progress)
 {
     int err = 0;
     int total = 0;
@@ -264,6 +300,10 @@ static int write_data_buffer(int fd, char* file_buffer, int size, syncsendbuf *s
         }
         total += count;
         total_bytes += count;
+
+        if (show_progress) {
+            print_transfer_progress(total, size);
+        }
     }
 
     return err;
@@ -295,7 +335,7 @@ static int write_data_link(int fd, const char *path, syncsendbuf *sbuf)
 #endif
 
 static int sync_send(int fd, const char *lpath, const char *rpath,
-                     unsigned mtime, mode_t mode, int verifyApk)
+                     unsigned mtime, mode_t mode, int show_progress)
 {
     syncmsg msg;
     int len, r;
@@ -310,63 +350,6 @@ static int sync_send(int fd, const char *lpath, const char *rpath,
     snprintf(tmp, sizeof(tmp), ",%d", mode);
     r = strlen(tmp);
 
-    if (verifyApk) {
-        int lfd;
-        zipfile_t zip;
-        zipentry_t entry;
-        int amt;
-
-        // if we are transferring an APK file, then sanity check to make sure
-        // we have a real zip file that contains an AndroidManifest.xml
-        // this requires that we read the entire file into memory.
-        lfd = adb_open(lpath, O_RDONLY);
-        if(lfd < 0) {
-            fprintf(stderr,"cannot open '%s': %s\n", lpath, strerror(errno));
-            return -1;
-        }
-
-        size = adb_lseek(lfd, 0, SEEK_END);
-        if (size == -1 || -1 == adb_lseek(lfd, 0, SEEK_SET)) {
-            fprintf(stderr, "error seeking in file '%s'\n", lpath);
-            adb_close(lfd);
-            return 1;
-        }
-
-        file_buffer = (char *)malloc(size);
-        if (file_buffer == NULL) {
-            fprintf(stderr, "could not allocate buffer for '%s'\n",
-                    lpath);
-            adb_close(lfd);
-            return 1;
-        }
-        amt = adb_read(lfd, file_buffer, size);
-        if (amt != size) {
-            fprintf(stderr, "error reading from file: '%s'\n", lpath);
-            adb_close(lfd);
-            free(file_buffer);
-            return 1;
-        }
-
-        adb_close(lfd);
-
-        zip = init_zipfile(file_buffer, size);
-        if (zip == NULL) {
-            fprintf(stderr, "file '%s' is not a valid zip file\n",
-                    lpath);
-            free(file_buffer);
-            return 1;
-        }
-
-        entry = lookup_zipentry(zip, "AndroidManifest.xml");
-        release_zipfile(zip);
-        if (entry == NULL) {
-            fprintf(stderr, "file '%s' does not contain AndroidManifest.xml\n",
-                    lpath);
-            free(file_buffer);
-            return 1;
-        }
-    }
-
     msg.req.id = ID_SEND;
     msg.req.namelen = htoll(len + r);
 
@@ -377,10 +360,10 @@ static int sync_send(int fd, const char *lpath, const char *rpath,
     }
 
     if (file_buffer) {
-        write_data_buffer(fd, file_buffer, size, sbuf);
+        write_data_buffer(fd, file_buffer, size, sbuf, show_progress);
         free(file_buffer);
     } else if (S_ISREG(mode))
-        write_data_file(fd, lpath, sbuf);
+        write_data_file(fd, lpath, sbuf, show_progress);
 #ifdef HAVE_SYMLINKS
     else if (S_ISLNK(mode))
         write_data_link(fd, lpath, sbuf);
@@ -419,10 +402,10 @@ fail:
     return -1;
 }
 
-static int mkdirs(char *name)
+static int mkdirs(const char *name)
 {
     int ret;
-    char *x = name + 1;
+    char *x = (char *)name + 1;
 
     for(;;) {
         x = adb_dirstart(x);
@@ -438,16 +421,37 @@ static int mkdirs(char *name)
     return 0;
 }
 
-int sync_recv(int fd, const char *rpath, const char *lpath)
+int sync_recv(int fd, const char *rpath, const char *lpath, int show_progress)
 {
     syncmsg msg;
     int len;
     int lfd = -1;
     char *buffer = send_buffer.data;
     unsigned id;
+    unsigned long long size = 0;
 
     len = strlen(rpath);
     if(len > 1024) return -1;
+
+    if (show_progress) {
+        // Determine remote file size.
+        syncmsg stat_msg;
+        stat_msg.req.id = ID_STAT;
+        stat_msg.req.namelen = htoll(len);
+
+        if (writex(fd, &stat_msg.req, sizeof(stat_msg.req)) ||
+            writex(fd, rpath, len)) {
+            return -1;
+        }
+
+        if (readx(fd, &stat_msg.stat, sizeof(stat_msg.stat))) {
+            return -1;
+        }
+
+        if (stat_msg.stat.id != ID_STAT) return -1;
+
+        size = ltohl(stat_msg.stat.size);
+    }
 
     msg.req.id = ID_RECV;
     msg.req.namelen = htoll(len);
@@ -463,7 +467,7 @@ int sync_recv(int fd, const char *rpath, const char *lpath)
 
     if((id == ID_DATA) || (id == ID_DONE)) {
         adb_unlink(lpath);
-        mkdirs((char *)lpath);
+        mkdirs(lpath);
         lfd = adb_creat(lpath, 0644);
         if(lfd < 0) {
             fprintf(stderr,"cannot create '%s': %s\n", lpath, strerror(errno));
@@ -502,6 +506,10 @@ int sync_recv(int fd, const char *rpath, const char *lpath)
         }
 
         total_bytes += len;
+
+        if (show_progress) {
+            print_transfer_progress(total_bytes, size);
+        }
     }
 
     adb_close(lfd);
@@ -632,30 +640,33 @@ static int local_build_list(copyinfo **filelist,
             continue;
         strcpy(stat_path, lpath);
         strcat(stat_path, de->d_name);
-        stat(stat_path, &st);
 
-        if (S_ISDIR(st.st_mode)) {
-            ci = mkcopyinfo(lpath, rpath, name, 1);
-            ci->next = dirlist;
-            dirlist = ci;
-        } else {
-            ci = mkcopyinfo(lpath, rpath, name, 0);
-            if(lstat(ci->src, &st)) {
-                fprintf(stderr,"cannot stat '%s': %s\n", ci->src, strerror(errno));
-                closedir(d);
-
-                return -1;
-            }
-            if(!S_ISREG(st.st_mode) && !S_ISLNK(st.st_mode)) {
-                fprintf(stderr, "skipping special file '%s'\n", ci->src);
-                free(ci);
+        if(!lstat(stat_path, &st)) {
+            if (S_ISDIR(st.st_mode)) {
+                ci = mkcopyinfo(lpath, rpath, name, 1);
+                ci->next = dirlist;
+                dirlist = ci;
             } else {
-                ci->time = st.st_mtime;
-                ci->mode = st.st_mode;
-                ci->size = st.st_size;
-                ci->next = *filelist;
-                *filelist = ci;
+                ci = mkcopyinfo(lpath, rpath, name, 0);
+                if(lstat(ci->src, &st)) {
+                    fprintf(stderr,"cannot stat '%s': %s\n", ci->src, strerror(errno));
+                    free(ci);
+                    closedir(d);
+                    return -1;
+                }
+                if(!S_ISREG(st.st_mode) && !S_ISLNK(st.st_mode)) {
+                    fprintf(stderr, "skipping special file '%s'\n", ci->src);
+                    free(ci);
+                } else {
+                    ci->time = st.st_mtime;
+                    ci->mode = st.st_mode;
+                    ci->size = st.st_size;
+                    ci->next = *filelist;
+                    *filelist = ci;
+                }
             }
+        } else {
+            fprintf(stderr, "cannot lstat '%s': %s\n",stat_path , strerror(errno));
         }
     }
 
@@ -721,7 +732,8 @@ static int copy_local_dir_remote(int fd, const char *lpath, const char *rpath, i
         if(ci->flag == 0) {
             fprintf(stderr,"%spush: %s -> %s\n", listonly ? "would " : "", ci->src, ci->dst);
             if(!listonly &&
-               sync_send(fd, ci->src, ci->dst, ci->time, ci->mode, 0 /* no verify APK */)){
+               sync_send(fd, ci->src, ci->dst, ci->time, ci->mode,
+                         0 /* no show progress */)) {
                 return 1;
             }
             pushed++;
@@ -739,7 +751,7 @@ static int copy_local_dir_remote(int fd, const char *lpath, const char *rpath, i
 }
 
 
-int do_sync_push(const char *lpath, const char *rpath, int verifyApk)
+int do_sync_push(const char *lpath, const char *rpath, int show_progress)
 {
     struct stat st;
     unsigned mode;
@@ -786,7 +798,7 @@ int do_sync_push(const char *lpath, const char *rpath, int verifyApk)
             rpath = tmp;
         }
         BEGIN();
-        if(sync_send(fd, lpath, rpath, st.st_mtime, st.st_mode, verifyApk)) {
+        if(sync_send(fd, lpath, rpath, st.st_mtime, st.st_mode, show_progress)) {
             return 1;
         } else {
             END();
@@ -868,8 +880,21 @@ static int remote_build_list(int syncfd, copyinfo **filelist,
     return 0;
 }
 
+static int set_time_and_mode(const char *lpath, unsigned int time, unsigned int mode)
+{
+    struct utimbuf times = { time, time };
+    int r1 = utime(lpath, &times);
+
+    /* use umask for permissions */
+    mode_t mask=umask(0000);
+    umask(mask);
+    int r2 = chmod(lpath, mode & ~mask);
+
+    return r1 ? : r2;
+}
+
 static int copy_remote_dir_local(int fd, const char *rpath, const char *lpath,
-                                 int checktimestamps)
+                                 int copy_attrs)
 {
     copyinfo *filelist = 0;
     copyinfo *ci, *next;
@@ -899,32 +924,16 @@ static int copy_remote_dir_local(int fd, const char *rpath, const char *lpath,
         return -1;
     }
 
-#if 0
-    if (checktimestamps) {
-        for (ci = filelist; ci != 0; ci = ci->next) {
-            if (sync_start_readtime(fd, ci->dst)) {
-                return 1;
-            }
-        }
-        for (ci = filelist; ci != 0; ci = ci->next) {
-            unsigned int timestamp, mode, size;
-            if (sync_finish_readtime(fd, &timestamp, &mode, &size))
-                return 1;
-            if (size == ci->size) {
-                /* for links, we cannot update the atime/mtime */
-                if ((S_ISREG(ci->mode & mode) && timestamp == ci->time) ||
-                    (S_ISLNK(ci->mode & mode) && timestamp >= ci->time))
-                    ci->flag = 1;
-            }
-        }
-    }
-#endif
     for (ci = filelist; ci != 0; ci = next) {
         next = ci->next;
         if (ci->flag == 0) {
             fprintf(stderr, "pull: %s -> %s\n", ci->src, ci->dst);
-            if (sync_recv(fd, ci->src, ci->dst)) {
+            if (sync_recv(fd, ci->src, ci->dst, 0 /* no show progress */)) {
                 return 1;
+            }
+
+            if (copy_attrs && set_time_and_mode(ci->dst, ci->time, ci->mode)) {
+               return 1;
             }
             pulled++;
         } else {
@@ -940,9 +949,9 @@ static int copy_remote_dir_local(int fd, const char *rpath, const char *lpath,
     return 0;
 }
 
-int do_sync_pull(const char *rpath, const char *lpath)
+int do_sync_pull(const char *rpath, const char *lpath, int show_progress, int copy_attrs)
 {
-    unsigned mode;
+    unsigned mode, time;
     struct stat st;
 
     int fd;
@@ -953,7 +962,7 @@ int do_sync_pull(const char *rpath, const char *lpath)
         return 1;
     }
 
-    if(sync_readmode(fd, rpath, &mode)) {
+    if(sync_readtime(fd, rpath, &time, &mode)) {
         return 1;
     }
     if(mode == 0) {
@@ -981,16 +990,18 @@ int do_sync_pull(const char *rpath, const char *lpath)
             }
         }
         BEGIN();
-        if(sync_recv(fd, rpath, lpath)) {
+        if (sync_recv(fd, rpath, lpath, show_progress)) {
             return 1;
         } else {
+            if (copy_attrs && set_time_and_mode(lpath, time, mode))
+                return 1;
             END();
             sync_quit(fd);
             return 0;
         }
     } else if(S_ISDIR(mode)) {
         BEGIN();
-        if (copy_remote_dir_local(fd, rpath, lpath, 0)) {
+        if (copy_remote_dir_local(fd, rpath, lpath, copy_attrs)) {
             return 1;
         } else {
             END();

@@ -9,7 +9,7 @@
 #import <Foundation/Foundation.h>
 
 
-typedef void (^ResponseBlock)(bool succ, NSString *result);
+typedef void (^ResponseBlock)(BOOL succ, NSString *result);
 
 
 typedef NSUInteger ADBInstallFlag;
@@ -24,6 +24,11 @@ NS_ENUM(ADBInstallFlag) {
 
 @interface AdbClient : NSObject
 
+
+-(id)init;
+-(id)initWithVerbose:(BOOL)flg;
+
+-(void) devices:(ResponseBlock)block;
 
 -(void) connect: (NSString *)addr didResponse:(ResponseBlock)block;
 -(void) disconnect: (NSString *)addr didResponse:(ResponseBlock)block;

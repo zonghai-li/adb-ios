@@ -14,25 +14,32 @@
  * limitations under the License.
  */
 
-#include <string.h>
-#include <cutils/process_name.h>
-#include <cutils/properties.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <fcntl.h>
-
+#include <stdlib.h>
+#include <string.h>
 #if defined(HAVE_PRCTL)
 #include <sys/prctl.h>
+#endif
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#include <cutils/process_name.h>
+#ifdef HAVE_ANDROID_OS
+#include <cutils/properties.h>
 #endif
 
 #define PROCESS_NAME_DEVICE "/sys/qemu_trace/process_name"
 
 static const char* process_name = "unknown";
+#ifdef HAVE_ANDROID_OS
 static int running_in_emulator = -1;
+#endif
 
 void set_process_name(const char* new_name) {
+#ifdef HAVE_ANDROID_OS
     char  propBuf[PROPERTY_VALUE_MAX];
+#endif
 
     if (new_name == NULL) {
         return;
@@ -52,6 +59,7 @@ void set_process_name(const char* new_name) {
     }
 #endif
 
+#ifdef HAVE_ANDROID_OS
     // If we know we are not running in the emulator, then return.
     if (running_in_emulator == 0) {
         return;
@@ -81,6 +89,7 @@ void set_process_name(const char* new_name) {
         return;
     write(fd, process_name, strlen(process_name) + 1);
     close(fd);
+#endif
 }
 
 const char* get_process_name(void) {

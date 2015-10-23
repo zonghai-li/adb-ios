@@ -19,5 +19,6 @@
 -(IBAction)startApk:(id)sender;
 -(IBAction)disconnect:(id)sender;
 -(IBAction)ps:(id)sender;
+-(IBAction)list:(id)sender;
 @end
 

@@ -23,6 +23,10 @@
 
 #include "sysdeps.h"
 
+#if !ADB_HOST
+#include <cutils/properties.h>
+#endif
+
 #define  TRACE_TAG  TRACE_SOCKETS
 #include "adb.h"
 
@@ -59,17 +63,22 @@ static asocket local_socket_closing_list = {
     .prev = &local_socket_closing_list,
 };
 
-asocket *find_local_socket(unsigned id)
+// Parse the global list of sockets to find one with id |local_id|.
+// If |peer_id| is not 0, also check that it is connected to a peer
+// with id |peer_id|. Returns an asocket handle on success, NULL on failure.
+asocket *find_local_socket(unsigned local_id, unsigned peer_id)
 {
     asocket *s;
     asocket *result = NULL;
 
     adb_mutex_lock(&socket_list_lock);
     for (s = local_socket_list.next; s != &local_socket_list; s = s->next) {
-        if (s->id == id) {
+        if (s->id != local_id)
+            continue;
+        if (peer_id == 0 || (s->peer && s->peer->id == peer_id)) {
             result = s;
-            break;
         }
+        break;
     }
     adb_mutex_unlock(&socket_list_lock);
 
@@ -91,6 +100,11 @@ void install_local_socket(asocket *s)
     adb_mutex_lock(&socket_list_lock);
 
     s->id = local_socket_next_id++;
+
+    // Socket ids should never be 0.
+    if (local_socket_next_id == 0)
+      local_socket_next_id = 1;
+
     insert_local_socket(s, &local_socket_list);
 
     adb_mutex_unlock(&socket_list_lock);
@@ -199,6 +213,8 @@ static void local_socket_close(asocket *s)
 static void local_socket_destroy(asocket  *s)
 {
     apacket *p, *n;
+    int exit_on_close = s->exit_on_close;
+
     D("LS(%d): destroying fde.fd=%d\n", s->id, s->fde.fd);
 
         /* IMPORTANT: the remove closes the fd
@@ -214,6 +230,11 @@ static void local_socket_destroy(asocket  *s)
     }
     remove_socket(s);
     free(s);
+
+    if (exit_on_close) {
+        D("local_socket_destroy: exiting\n");
+        exit(1);
+    }
 }
 
 
@@ -223,6 +244,12 @@ static void local_socket_close_locked(asocket *s)
     if(s->peer) {
         D("LS(%d): closing peer. peer->id=%d peer->fd=%d\n",
           s->id, s->peer->id, s->peer->fd);
+        /* Note: it's important to call shutdown before disconnecting from
+         * the peer, this ensures that remote sockets can still get the id
+         * of the local socket they're connected to, to send a CLOSE()
+         * protocol event. */
+        if (s->peer->shutdown)
+          s->peer->shutdown(s->peer);
         s->peer->peer = 0;
         // tweak to avoid deadlock
         if (s->peer->close == local_socket_close) {
@@ -319,7 +346,7 @@ static void local_socket_event_func(int fd, unsigned ev, void *_s)
 
         while(avail > 0) {
             r = adb_read(fd, x, avail);
-            D("LS(%d): post adb_read(fd=%d,...) r=%d (errno=%d) avail=%d\n", s->id, s->fd, r, r<0?errno:0, avail);
+            D("LS(%d): post adb_read(fd=%d,...) r=%d (errno=%d) avail=%zu\n", s->id, s->fd, r, r<0?errno:0, avail);
             if(r > 0) {
                 avail -= r;
                 x += r;
@@ -390,6 +417,7 @@ asocket *create_local_socket(int fd)
     s->fd = fd;
     s->enqueue = local_socket_enqueue;
     s->ready = local_socket_ready;
+    s->shutdown = NULL;
     s->close = local_socket_close;
     install_local_socket(s);
 
@@ -404,6 +432,9 @@ asocket *create_local_service_socket(const char *name)
 {
     asocket *s;
     int fd;
+#if !ADB_HOST
+    char debug[PROPERTY_VALUE_MAX];
+#endif
 
 #if !ADB_HOST
     if (!strcmp(name,"jdwp")) {
@@ -418,6 +449,20 @@ asocket *create_local_service_socket(const char *name)
 
     s = create_local_socket(fd);
     D("LS(%d): bound to '%s' via %d\n", s->id, name, fd);
+
+#if !ADB_HOST
+    if (!strncmp(name, "root:", 5))
+        property_get("ro.debuggable", debug, "");
+
+    if ((!strncmp(name, "root:", 5) && getuid() != 0
+        && strcmp(debug, "1") == 0)
+        || !strncmp(name, "usb:", 4)
+        || !strncmp(name, "tcpip:", 6)) {
+        D("LS(%d): enabling exit_on_close\n", s->id);
+        s->exit_on_close = 1;
+    }
+#endif
+
     return s;
 }
 
@@ -468,21 +513,29 @@ static void remote_socket_ready(asocket *s)
     send_packet(p, s->transport);
 }
 
-static void remote_socket_close(asocket *s)
+static void remote_socket_shutdown(asocket *s)
 {
-    D("entered remote_socket_close RS(%d) CLOSE fd=%d peer->fd=%d\n",
+    D("entered remote_socket_shutdown RS(%d) CLOSE fd=%d peer->fd=%d\n",
       s->id, s->fd, s->peer?s->peer->fd:-1);
     apacket *p = get_apacket();
     p->msg.command = A_CLSE;
     if(s->peer) {
         p->msg.arg0 = s->peer->id;
+    }
+    p->msg.arg1 = s->id;
+    send_packet(p, s->transport);
+}
+
+static void remote_socket_close(asocket *s)
+{
+    if (s->peer) {
         s->peer->peer = 0;
         D("RS(%d) peer->close()ing peer->id=%d peer->fd=%d\n",
           s->id, s->peer->id, s->peer->fd);
         s->peer->close(s->peer);
     }
-    p->msg.arg1 = s->id;
-    send_packet(p, s->transport);
+    D("entered remote_socket_close RS(%d) CLOSE fd=%d peer->fd=%d\n",
+      s->id, s->fd, s->peer?s->peer->fd:-1);
     D("RS(%d): closed\n", s->id);
     remove_transport_disconnect( s->transport, &((aremotesocket*)s)->disconnect );
     free(s);
@@ -502,15 +555,24 @@ static void remote_socket_disconnect(void*  _s, atransport*  t)
     free(s);
 }
 
+/* Create an asocket to exchange packets with a remote service through transport
+  |t|. Where |id| is the socket id of the corresponding service on the other
+   side of the transport (it is allocated by the remote side and _cannot_ be 0).
+   Returns a new non-NULL asocket handle. */
 asocket *create_remote_socket(unsigned id, atransport *t)
 {
-    asocket *s = calloc(1, sizeof(aremotesocket));
-    adisconnect*  dis = &((aremotesocket*)s)->disconnect;
+    asocket* s;
+    adisconnect* dis;
+
+    if (id == 0) fatal("invalid remote socket id (0)");
+    s = calloc(1, sizeof(aremotesocket));
+    dis = &((aremotesocket*)s)->disconnect;
 
     if (s == NULL) fatal("cannot allocate socket");
     s->id = id;
     s->enqueue = remote_socket_enqueue;
     s->ready = remote_socket_ready;
+    s->shutdown = remote_socket_shutdown;
     s->close = remote_socket_close;
     s->transport = t;
 
@@ -545,6 +607,7 @@ void connect_to_remote(asocket *s, const char *destination)
 static void local_socket_ready_notify(asocket *s)
 {
     s->ready = local_socket_ready;
+    s->shutdown = NULL;
     s->close = local_socket_close;
     adb_write(s->fd, "OKAY", 4);
     s->ready(s);
@@ -556,6 +619,7 @@ static void local_socket_ready_notify(asocket *s)
 static void local_socket_close_notify(asocket *s)
 {
     s->ready = local_socket_ready;
+    s->shutdown = NULL;
     s->close = local_socket_close;
     sendfailmsg(s->fd, "closed");
     s->close(s);
@@ -591,12 +655,30 @@ unsigned unhex(unsigned char *s, int len)
     return n;
 }
 
+#define PREFIX(str) { str, sizeof(str) - 1 }
+static const struct prefix_struct {
+    const char *str;
+    const size_t len;
+} prefixes[] = {
+    PREFIX("usb:"),
+    PREFIX("product:"),
+    PREFIX("model:"),
+    PREFIX("device:"),
+};
+static const int num_prefixes = (sizeof(prefixes) / sizeof(prefixes[0]));
+
 /* skip_host_serial return the position in a string
    skipping over the 'serial' parameter in the ADB protocol,
    where parameter string may be a host:port string containing
    the protocol delimiter (colon). */
 char *skip_host_serial(char *service) {
     char *first_colon, *serial_end;
+    int i;
+
+    for (i = 0; i < num_prefixes; i++) {
+        if (!strncmp(service, prefixes[i].str, prefixes[i].len))
+            return strchr(service + prefixes[i].len, ':');
+    }
 
     first_colon = strchr(service, ':');
     if (!first_colon) {
@@ -732,6 +814,7 @@ static int smart_socket_enqueue(asocket *s, apacket *p)
         adb_write(s->peer->fd, "OKAY", 4);
 
         s->peer->ready = local_socket_ready;
+        s->peer->shutdown = NULL;
         s->peer->close = local_socket_close;
         s->peer->peer = s2;
         s2->peer = s->peer;
@@ -771,6 +854,7 @@ static int smart_socket_enqueue(asocket *s, apacket *p)
         ** tear down
         */
     s->peer->ready = local_socket_ready_notify;
+    s->peer->shutdown = NULL;
     s->peer->close = local_socket_close_notify;
     s->peer->peer = 0;
         /* give him our transport and upref it */
@@ -809,29 +893,24 @@ static void smart_socket_close(asocket *s)
     free(s);
 }
 
-asocket *create_smart_socket(void (*action_cb)(asocket *s, const char *act))
+static asocket *create_smart_socket(void)
 {
     D("Creating smart socket \n");
     asocket *s = calloc(1, sizeof(asocket));
     if (s == NULL) fatal("cannot allocate socket");
     s->enqueue = smart_socket_enqueue;
     s->ready = smart_socket_ready;
+    s->shutdown = NULL;
     s->close = smart_socket_close;
-    s->extra = action_cb;
 
-    D("SS(%d): created %p\n", s->id, action_cb);
+    D("SS(%d)\n", s->id);
     return s;
-}
-
-void smart_socket_action(asocket *s, const char *act)
-{
-
 }
 
 void connect_to_smartsocket(asocket *s)
 {
     D("Connecting to smart socket \n");
-    asocket *ss = create_smart_socket(smart_socket_action);
+    asocket *ss = create_smart_socket();
     s->peer = ss;
     ss->peer = s;
     s->ready(s);
